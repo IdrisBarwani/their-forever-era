@@ -1,0 +1,20 @@
+# Netlify build for "Their Forever Era": a static Vite + React site with no server code.
+# There are no client-side routes (chapters use #hash links), so no SPA redirect is needed;
+# unknown paths keep returning a real 404 instead of masking missing files.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  # Vite 8 needs Node 20.19+ or 22.12+; the site was built and tested on Node 24.
+  NODE_VERSION = "24"
+  # Only the media scripts need install scripts (ffmpeg-static downloads an ffmpeg binary);
+  # the website build does not, so skip them for faster, more reliable installs.
+  NPM_FLAGS = "--ignore-scripts"
+
+# Vite fingerprints everything in /assets (JavaScript, CSS, fonts), so those files never change.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
