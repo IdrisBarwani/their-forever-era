@@ -1,0 +1,18 @@
+{
+  "viewBox": [1000, 520],
+  "stars": [
+    { "id": "j1", "x": 90, "y": 450, "r": 5, "path": "jamila" },
+    { "id": "j2", "x": 226, "y": 304, "r": 6, "path": "jamila" },
+    { "id": "j3", "x": 366, "y": 370, "r": 5, "path": "jamila" },
+    { "id": "m1", "x": 912, "y": 436, "r": 5, "path": "mustafa" },
+    { "id": "m2", "x": 776, "y": 294, "r": 6, "path": "mustafa" },
+    { "id": "m3", "x": 634, "y": 362, "r": 5, "path": "mustafa" },
+    { "id": "forever", "x": 500, "y": 176, "r": 9, "path": "shared" }
+  ],
+  "paths": {
+    "jamila": ["j1", "j2", "j3"],
+    "mustafa": ["m1", "m2", "m3"]
+  },
+  "join": "forever",
+  "beyond": { "x": 500, "y": 18 }
+}

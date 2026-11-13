@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Jamila &amp; Mustafa — Their Forever Era</title>
+    <meta name="description" content="A little purple universe, made for Jamila &amp; Mustafa Lokhandwala's beautiful beginning. A BTS-inspired wedding congratulations fan tribute." />
+    <!-- A private surprise: keep it out of search results. -->
+    <meta name="robots" content="noindex, nofollow, noimageindex" />
+    <meta name="theme-color" content="#100918" />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- og:image, og:url and twitter:image are added at build time from VITE_SITE_URL (see vite.config.ts). -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Jamila &amp; Mustafa — Their Forever Era" />
+    <meta property="og:description" content="Happy married life, Jamila &amp; Mustafa Lokhandwala. A BTS-inspired wedding wish." />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- The opening photograph is the first thing seen: fetch it immediately. -->
+    <link
+      rel="preload"
+      as="image"
+      type="image/webp"
+      href="/media/img/hero-1280.webp"
+      imagesrcset="/media/img/hero-768.webp 768w, /media/img/hero-1280.webp 1280w, /media/img/hero-1920.webp 1920w, /media/img/hero-2560.webp 2560w"
+      imagesizes="100vw"
+      fetchpriority="high"
+    />
+    <style>
+      html { background: #100918; }
+      body { margin: 0; }
+      .boot { position: fixed; inset: 0; display: grid; place-items: center; color: #dcc8ff; font: 600 12px/1 system-ui, sans-serif; letter-spacing: .3em; text-transform: uppercase; }
+      #root:not(:empty) + .boot { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <div class="boot" aria-hidden="true">✦</div>
+    <noscript>
+      <div style="max-width:640px;margin:20vh auto;padding:0 24px;color:#efe5ff;font:18px/1.6 Georgia,serif;text-align:center">
+        <p style="font-size:42px;line-height:1.1;margin:0 0 16px">Jamila &amp; Mustafa — Their Forever Era</p>
+        <p>Happy married life, Jamila &amp; Mustafa Lokhandwala. May your forever shine brighter than a purple ocean.</p>
+        <p style="opacity:.75;font-size:15px">This celebration needs JavaScript to show its photos, film and lights.</p>
+      </div>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

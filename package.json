@@ -1,0 +1,42 @@
+{
+  "name": "jamila-mustafa-forever-era",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Jamila & Mustafa — Their Forever Era. A BTS-inspired wedding congratulations fan tribute.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "media:fetch": "node scripts/fetch-media.mjs",
+    "media:audio": "node scripts/make-audio.mjs",
+    "media:film": "node scripts/make-film.mjs",
+    "media:share": "node scripts/make-share-images.mjs",
+    "docs:media": "node scripts/capture-docs.mjs",
+    "test:browser": "node scripts/browser-check.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/cormorant-garamond": "^5.3.0",
+    "@fontsource-variable/manrope": "^5.3.0",
+    "@gsap/react": "^2.1.2",
+    "gsap": "^3.15.1",
+    "lenis": "^1.3.27",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "ffmpeg-static": "^5.3.0",
+    "playwright-core": "^1.65.0",
+    "sharp": "^0.35.5",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.8"
+  },
+  "allowScripts": {
+    "ffmpeg-static@5.3.0": true
+  }
+}

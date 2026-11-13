@@ -1,0 +1,33 @@
+# Dependencies and build output (Netlify rebuilds dist/ from source)
+node_modules
+dist
+dist-ssr
+
+# Logs and caches
+logs
+*.log
+npm-debug.log*
+*.tsbuildinfo
+.cache
+
+# Environment files: copy .env.example to .env for local use
+.env
+.env.*
+!.env.example
+*.local
+
+# Netlify CLI link state (site id lives in Netlify, not in the repo)
+.netlify
+
+# Raw downloads and intermediate renders used by the media scripts
+media-src/
+.film-frames/
+.screenshots/
+
+# Editor and OS files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.sw?

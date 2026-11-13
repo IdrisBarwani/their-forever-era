@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Forever Era film renderer</title>
+    <style>
+      html, body { margin: 0; background: #000; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <script>
+      /*
+       * Deterministic renderer for the tribute's original concert-light film.
+       * frame(t) draws the scene at time t (seconds) and returns a JPEG data URL,
+       * so frames can be rendered in any order and the result is identical every run.
+       */
+      const W = 1280
+      const H = 720
+      const TAU = Math.PI * 2
+      const canvas = document.getElementById('c')
+      canvas.width = W
+      canvas.height = H
+      const ctx = canvas.getContext('2d')
+
+      const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v))
+      const lerp = (a, b, t) => a + (b - a) * t
+      const smooth = (a, b, v) => {
+        const t = clamp((v - a) / (b - a))
+        return t * t * (3 - 2 * t)
+      }
+      const easeInOut = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
+      const easeOut = (t) => 1 - Math.pow(1 - t, 3)
+
+      function rng(seed) {
+        let a = seed >>> 0
+        return () => {
+          a |= 0
+          a = (a + 0x6d2b79f5) | 0
+          let t = Math.imul(a ^ (a >>> 15), 1 | a)
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+        }
+      }
+
+      function sprite(rgb, size = 96, core = 0.18) {
+        const c = document.createElement('canvas')
+        c.width = c.height = size
+        const g = c.getContext('2d')
+        const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+        grad.addColorStop(0, `rgba(255,255,255,1)`)
+        grad.addColorStop(core, `rgba(${rgb},0.95)`)
+        grad.addColorStop(0.42, `rgba(${rgb},0.32)`)
+        grad.addColorStop(1, `rgba(${rgb},0)`)
+        g.fillStyle = grad
+        g.fillRect(0, 0, size, size)
+        return c
+      }
+
+      const SPRITES = {
+        purple: sprite('169,112,255'),
+        violet: sprite('122,72,196'),
+        lilac: sprite('220,200,255'),
+        ivory: sprite('255,248,240', 96, 0.25),
+        champagne: sprite('216,190,145'),
+      }
+
+      // Static film grain, generated once (keeps gradients from banding without per-frame noise).
+      const grain = document.createElement('canvas')
+      grain.width = 256
+      grain.height = 256
+      {
+        const g = grain.getContext('2d')
+        const img = g.createImageData(256, 256)
+        const r = rng(99)
+        for (let i = 0; i < img.data.length; i += 4) {
+          const v = Math.floor(r() * 255)
+          img.data[i] = img.data[i + 1] = img.data[i + 2] = v
+          img.data[i + 3] = 255
+        }
+        g.putImageData(img, 0, 0)
+      }
+
+      let C = null
+      let lights = []
+      let stars = []
+
+      window.setup = function setup(constellation) {
+        C = constellation
+        const r = rng(1987)
+        lights = []
+        for (let i = 0; i < 7200; i++) {
+          // denser toward the horizon so the far field reads as one glowing sea
+          const z = 2.2 + Math.pow(r(), 0.72) * 96
+          const x = (r() * 2 - 1) * (z * 1.18 + 5)
+          const roll = r()
+          lights.push({
+            x,
+            z,
+            phase: r() * TAU,
+            speed: 0.7 + r() * 0.8,
+            color: roll < 0.07 ? 'lilac' : roll < 0.1 ? 'ivory' : roll < 0.3 ? 'violet' : 'purple',
+            on: 0.35 + (z / 94) * 2.5 + r() * 0.7,
+          })
+        }
+        lights.sort((a, b) => b.z - a.z)
+        stars = []
+        for (let i = 0; i < 320; i++) {
+          stars.push({ x: r() * W, y: r() * H * 0.78, s: 0.4 + r() * 1.5, p: r() * TAU, f: 0.6 + r() * 2 })
+        }
+      }
+
+      // Constellation layout in film space.
+      const S = 0.95
+      const toFilm = (p) => ({ x: W / 2 + (p.x - 500) * S, y: 46 + (p.y - 120) * S })
+      const byId = (id) => toFilm(C.stars.find((s) => s.id === id))
+
+      function polyline(points, n) {
+        const out = []
+        for (let i = 0; i < points.length - 1; i++) {
+          const a = points[i]
+          const b = points[i + 1]
+          for (let k = 0; k < n; k++) {
+            const t = k / n
+            out.push({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), seg: i })
+          }
+        }
+        out.push({ ...points[points.length - 1], seg: points.length - 2 })
+        return out
+      }
+
+      function pathPoints(side) {
+        const ids = side === 'jamila' ? ['j1', 'j2', 'j3'] : ['m1', 'm2', 'm3']
+        const first = byId(ids[0])
+        const start = { x: side === 'jamila' ? W * 0.08 : W * 0.92, y: H * 0.86 }
+        const ctrl = { x: side === 'jamila' ? W * 0.02 : W * 0.98, y: H * 0.5 }
+        const rise = []
+        for (let k = 0; k <= 24; k++) {
+          const t = k / 24
+          rise.push({
+            x: (1 - t) * (1 - t) * start.x + 2 * (1 - t) * t * ctrl.x + t * t * first.x,
+            y: (1 - t) * (1 - t) * start.y + 2 * (1 - t) * t * ctrl.y + t * t * first.y,
+            seg: -1,
+          })
+        }
+        const rest = polyline([first, byId(ids[1]), byId(ids[2]), byId('forever')], 26)
+        return rise.concat(rest.slice(1))
+      }
+
+      function drawTrail(points, progress, alpha, rgb) {
+        const count = Math.max(2, Math.floor(points.length * progress))
+        const pts = points.slice(0, count)
+        ctx.save()
+        ctx.globalCompositeOperation = 'lighter'
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        const passes = [
+          [10, 0.05],
+          [4, 0.16],
+          [1.6, 0.7],
+        ]
+        for (const [w, a] of passes) {
+          ctx.strokeStyle = `rgba(${rgb},${a * alpha})`
+          ctx.lineWidth = w
+          ctx.beginPath()
+          pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)))
+          ctx.stroke()
+        }
+        const head = pts[pts.length - 1]
+        if (progress < 1 && progress > 0) {
+          ctx.globalAlpha = alpha
+          ctx.drawImage(SPRITES.ivory, head.x - 26, head.y - 26, 52, 52)
+        }
+        ctx.restore()
+        return head
+      }
+
+      function starGlow(p, size, alpha, kind = 'lilac') {
+        if (alpha <= 0) return
+        ctx.save()
+        ctx.globalCompositeOperation = 'lighter'
+        ctx.globalAlpha = clamp(alpha)
+        const s = SPRITES[kind]
+        ctx.drawImage(s, p.x - size / 2, p.y - size / 2, size, size)
+        ctx.restore()
+      }
+
+      function sparkle(p, len, alpha, rot = 0) {
+        if (alpha <= 0 || len <= 0) return
+        ctx.save()
+        ctx.globalCompositeOperation = 'lighter'
+        ctx.translate(p.x, p.y)
+        ctx.rotate(rot)
+        for (const [L, angle] of [
+          [len, 0],
+          [len * 0.72, Math.PI / 2],
+        ]) {
+          ctx.save()
+          ctx.rotate(angle)
+          const grad = ctx.createLinearGradient(-L, 0, L, 0)
+          grad.addColorStop(0, 'rgba(220,200,255,0)')
+          grad.addColorStop(0.5, `rgba(255,248,240,${clamp(alpha)})`)
+          grad.addColorStop(1, 'rgba(220,200,255,0)')
+          ctx.fillStyle = grad
+          ctx.fillRect(-L, -0.9, L * 2, 1.8)
+          ctx.restore()
+        }
+        ctx.restore()
+      }
+
+      window.frame = function frame(t, quality = 0.92) {
+        const T = 12
+        const dawn = smooth(8.4, 11.5, t)
+        const horizon = H * lerp(0.6, 0.7, easeInOut(clamp(t / T)))
+
+        // Sky
+        ctx.globalCompositeOperation = 'source-over'
+        ctx.globalAlpha = 1
+        const sky = ctx.createLinearGradient(0, 0, 0, H)
+        const hz = horizon / H
+        sky.addColorStop(0, `rgb(${lerp(9, 22, dawn)},${lerp(5, 12, dawn)},${lerp(16, 38, dawn)})`)
+        sky.addColorStop(hz - 0.12, `rgb(${lerp(24, 60, dawn)},${lerp(11, 30, dawn)},${lerp(42, 86, dawn)})`)
+        sky.addColorStop(hz, `rgb(${lerp(44, 104, dawn)},${lerp(20, 66, dawn)},${lerp(74, 136, dawn)})`)
+        sky.addColorStop(Math.min(1, hz + 0.07), `rgb(${lerp(28, 52, dawn)},${lerp(13, 26, dawn)},${lerp(48, 78, dawn)})`)
+        sky.addColorStop(Math.min(1, hz + 0.22), 'rgb(17,8,28)')
+        sky.addColorStop(1, 'rgb(10,5,16)')
+        ctx.fillStyle = sky
+        ctx.fillRect(0, 0, W, H)
+
+        // Fade from black at the very start
+        const open = smooth(0, 0.9, t)
+
+        // Horizon bloom
+        ctx.save()
+        ctx.globalCompositeOperation = 'lighter'
+        const hg = ctx.createRadialGradient(W / 2, horizon, 0, W / 2, horizon, W * 0.65)
+        const glowA = (0.16 + 0.28 * smooth(1, 4, t) + 0.25 * dawn) * open
+        hg.addColorStop(0, `rgba(${lerp(169, 230, dawn)},${lerp(112, 190, dawn)},${lerp(255, 200, dawn)},${glowA})`)
+        hg.addColorStop(0.4, `rgba(122,72,196,${glowA * 0.4})`)
+        hg.addColorStop(1, 'rgba(68,32,107,0)')
+        ctx.fillStyle = hg
+        ctx.fillRect(0, 0, W, H)
+        ctx.restore()
+
+        // Concert spotlights rising from the stage on the horizon; they gather toward the seventh star
+        ctx.save()
+        ctx.globalCompositeOperation = 'lighter'
+        ctx.filter = 'blur(10px)'
+        const beams = [-0.42, -0.2, 0.2, 0.42]
+        const gather = smooth(7.6, 9.4, t)
+        beams.forEach((base, i) => {
+          const sway = Math.sin(t * 0.45 + i * 1.7) * 0.07
+          const angle = lerp(base + sway, base * 0.18, gather)
+          const len = H * 1.05
+          const a = (0.05 + 0.05 * smooth(2.2, 4.4, t)) * open
+          ctx.save()
+          ctx.translate(W / 2 + (i - 1.5) * 90 * (1 - gather * 0.7), horizon)
+          ctx.rotate(angle)
+          const g = ctx.createLinearGradient(0, 0, 0, -len)
+          g.addColorStop(0, `rgba(220,200,255,${a})`)
+          g.addColorStop(0.6, `rgba(169,112,255,${a * 0.35})`)
+          g.addColorStop(1, 'rgba(169,112,255,0)')
+          ctx.fillStyle = g
+          ctx.beginPath()
+          ctx.moveTo(-3, 0)
+          ctx.lineTo(3, 0)
+          ctx.lineTo(70, -len)
+          ctx.lineTo(-70, -len)
+          ctx.closePath()
+          ctx.fill()
+          ctx.restore()
+        })
+        ctx.filter = 'none'
+        ctx.restore()
+
+        // Stars in the sky (drift upward a little as the camera tilts)
+        ctx.save()
+        ctx.globalCompositeOperation = 'lighter'
+        const drift = (horizon - H * 0.6) * 0.5
+        for (const s of stars) {
+          const y = s.y + drift
+          if (y > horizon - 6) continue
+          const tw = 0.55 + 0.45 * Math.sin(t * s.f + s.p)
+          ctx.fillStyle = `rgba(230,220,255,${0.65 * tw * open})`
+          ctx.beginPath()
+          ctx.arc(s.x, y, s.s, 0, TAU)
+          ctx.fill()
+        }
+        ctx.restore()
+
+        // The purple ocean
+        const f = 640
+        const camH = 3.1
+        const ring = t > 8.2 ? (t - 8.2) * 24 : -1 // brightness wave radius (world units) after the seventh star lights
+        ctx.save()
+        ctx.globalCompositeOperation = 'lighter'
+        for (const l of lights) {
+          const on = smooth(l.on, l.on + 0.5, t)
+          if (on <= 0) continue
+          const wave = Math.sin(t * 1.6 * l.speed + l.x * 0.22 + l.z * 0.31 + l.phase) * 0.22
+          const sx = W / 2 + (l.x / l.z) * f
+          if (sx < -40 || sx > W + 40) continue
+          const sy = horizon + ((camH - wave) / l.z) * f * 0.62
+          if (sy > H + 30) continue
+          const fog = clamp(1.08 - l.z / 100)
+          let boost = 0
+          if (ring > 0) {
+            const d = Math.hypot(l.x, l.z - 4)
+            boost = Math.exp(-((d - ring) ** 2) / 30) * 0.9 * (1 - smooth(10.5, 12, t) * 0.5)
+          }
+          const size = clamp((1 / l.z) * f * 0.22, 2.4, 30) * (1 + boost * 0.5)
+          const flicker = 0.82 + 0.18 * Math.sin(t * 5 * l.speed + l.phase * 3)
+          ctx.globalAlpha = clamp(on * fog * flicker * (0.8 + boost))
+          const spr = boost > 0.35 ? SPRITES.lilac : SPRITES[l.color]
+          ctx.drawImage(spr, sx - size / 2, sy - size / 2, size, size)
+          if (l.z < 4.5) {
+            // a faint lightstick handle under the nearest lights
+            ctx.globalAlpha = 0.1 * on * fog
+            ctx.fillStyle = 'rgb(200,180,255)'
+            ctx.fillRect(sx - 1, sy + size * 0.2, 2, size * 0.6)
+          }
+        }
+        ctx.restore()
+
+        // Haze over the crowd: the far lights melt into one glowing sea
+        ctx.save()
+        ctx.globalCompositeOperation = 'lighter'
+        const haze = ctx.createLinearGradient(0, horizon - 30, 0, horizon + H * 0.22)
+        const hazeA = 0.2 * smooth(1.2, 3.8, t) + 0.1 * dawn
+        haze.addColorStop(0, 'rgba(169,112,255,0)')
+        haze.addColorStop(0.16, `rgba(169,112,255,${hazeA})`)
+        haze.addColorStop(0.45, `rgba(122,72,196,${hazeA * 0.4})`)
+        haze.addColorStop(1, 'rgba(68,32,107,0)')
+        ctx.fillStyle = haze
+        ctx.fillRect(0, horizon - 30, W, H * 0.22 + 30)
+        ctx.restore()
+
+        // Two paths, one constellation
+        if (C) {
+          const jam = pathPoints('jamila')
+          const mus = pathPoints('mustafa')
+          const pj = easeInOut(clamp((t - 3.6) / 4.6))
+          const pm = easeInOut(clamp((t - 3.85) / 4.35))
+          const linesAlpha = open
+          let headJ = null
+          let headM = null
+          if (t > 3.6) headJ = drawTrail(jam, pj, linesAlpha, '220,200,255')
+          if (t > 3.85) headM = drawTrail(mus, pm, linesAlpha, '220,200,255')
+          void headJ
+          void headM
+
+          // Stars of each path ignite as the light passes them
+          const igniteAt = (points, progress, id) => {
+            const target = byId(id)
+            const idx = points.findIndex((p) => Math.hypot(p.x - target.x, p.y - target.y) < 0.5)
+            const at = idx / points.length
+            return smooth(at - 0.01, at + 0.06, progress)
+          }
+          for (const s of C.stars) {
+            if (s.id === 'forever') continue
+            const p = toFilm(s)
+            const lit = s.path === 'jamila' ? igniteAt(jam, pj, s.id) : igniteAt(mus, pm, s.id)
+            const tw = 0.85 + 0.15 * Math.sin(t * 3 + s.x)
+            starGlow(p, (34 + s.r * 6) * tw, lit * 0.9)
+            starGlow(p, 10 + s.r * 2, lit, 'ivory')
+            sparkle(p, 14 + s.r * 2, lit * 0.6)
+          }
+
+          // The seventh star: where both paths meet
+          const F = byId('forever')
+          const bloom = smooth(8.15, 8.9, t)
+          const settle = 1 - smooth(9.0, 11.0, t) * 0.45
+          if (bloom > 0) {
+            ctx.save()
+            ctx.globalCompositeOperation = 'lighter'
+            const rg = ctx.createRadialGradient(F.x, F.y, 0, F.x, F.y, 260)
+            rg.addColorStop(0, `rgba(255,248,240,${0.55 * bloom * settle})`)
+            rg.addColorStop(0.18, `rgba(220,200,255,${0.32 * bloom * settle})`)
+            rg.addColorStop(0.55, `rgba(169,112,255,${0.12 * bloom * settle})`)
+            rg.addColorStop(1, 'rgba(169,112,255,0)')
+            ctx.fillStyle = rg
+            ctx.fillRect(F.x - 260, F.y - 260, 520, 520)
+            ctx.restore()
+            // expanding halo ring
+            const rr = smooth(8.2, 10.6, t)
+            if (rr > 0 && rr < 1) {
+              ctx.save()
+              ctx.globalCompositeOperation = 'lighter'
+              ctx.strokeStyle = `rgba(220,200,255,${0.35 * (1 - rr)})`
+              ctx.lineWidth = 1.5
+              ctx.beginPath()
+              ctx.arc(F.x, F.y, 20 + rr * 220, 0, TAU)
+              ctx.stroke()
+              ctx.restore()
+            }
+            starGlow(F, 90 * (0.9 + 0.1 * Math.sin(t * 2.2)), bloom)
+            starGlow(F, 26, bloom, 'ivory')
+            sparkle(F, 60 * bloom, bloom * 0.85, 0)
+            sparkle(F, 26 * bloom, bloom * 0.4, Math.PI / 4)
+          }
+
+          // One path forward, beyond the seventh star
+          const beyond = smooth(9.4, 11.2, t)
+          if (beyond > 0) {
+            const B = toFilm(C.beyond)
+            ctx.save()
+            ctx.globalCompositeOperation = 'lighter'
+            ctx.setLineDash([2, 7])
+            ctx.strokeStyle = `rgba(216,190,145,${0.6 * beyond})`
+            ctx.lineWidth = 1.2
+            ctx.beginPath()
+            ctx.moveTo(F.x, F.y - 14)
+            ctx.lineTo(F.x, lerp(F.y - 14, B.y, easeOut(beyond)))
+            ctx.stroke()
+            ctx.restore()
+            starGlow({ x: F.x, y: lerp(F.y - 14, B.y, easeOut(beyond)) }, 22, beyond * 0.8, 'champagne')
+          }
+        }
+
+        // Vignette
+        ctx.save()
+        const vg = ctx.createRadialGradient(W / 2, H * 0.48, H * 0.3, W / 2, H * 0.5, W * 0.75)
+        vg.addColorStop(0, 'rgba(0,0,0,0)')
+        vg.addColorStop(1, 'rgba(6,2,10,0.72)')
+        ctx.fillStyle = vg
+        ctx.fillRect(0, 0, W, H)
+        ctx.restore()
+
+        // Opening fade
+        if (open < 1) {
+          ctx.fillStyle = `rgba(4,2,8,${1 - open})`
+          ctx.fillRect(0, 0, W, H)
+        }
+
+        // Grain
+        ctx.save()
+        ctx.globalAlpha = 0.035
+        ctx.globalCompositeOperation = 'overlay'
+        for (let y = 0; y < H; y += 256) for (let x = 0; x < W; x += 256) ctx.drawImage(grain, x, y)
+        ctx.restore()
+
+        return canvas.toDataURL('image/jpeg', quality)
+      }
+    </script>
+  </body>
+</html>
