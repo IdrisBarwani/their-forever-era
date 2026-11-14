@@ -210,4 +210,4 @@ The site has no expiry date and no scheduled shutdown. It stays online for as lo
 
 This is an unofficial, non-commercial fan tribute made for a wedding. It is not an official BTS production, and no endorsement by BTS, BIGHIT MUSIC or HYBE is implied. BTS, ARMY and related names belong to their owners.
 
-**Testing.** The site was checked with the included browser scripts in Google Chrome on macOS, at desktop, tablet and phone sizes, and in calm mode. It has not been tested in Safari or Firefox, or on a physical phone.
+**Testing.** The site was checked in headless Google Chrome on macOS, on the local build and on the live site: at desktop, tablet and phone sizes, in calm mode, by keyboard, and through complete play-throughs, partly with the included `npm run test:browser` script. It has not been tested in Safari or Firefox, or on a physical phone.
